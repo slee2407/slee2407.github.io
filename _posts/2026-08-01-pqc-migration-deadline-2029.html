@@ -1,0 +1,296 @@
+---
+layout: post
+title: "Why the Post-Quantum Cryptography (PQC) Migration Deadline Moved Up to 2029"
+subtitle: "Analyzing the Google and Oratomic papers on breaking ECC-256"
+date: 2026-08-01 12:00:00 +0900
+background: '/img/bg-post.jpg'
+---
+
+<p><em>Translated and adapted from the Korean original, <a href="https://r-note.tistory.com/162" target="_blank" rel="noopener">"양자내성암호(PQC) 전환 기한이 2029로 앞당겨진 이유 - Google·Oratomic 논문 분석"</a> by Ishmael (r-note.tistory.com).</em></p>
+
+<div class="alert alert-primary">
+  <strong>TL;DR</strong> — On March 30, 2026, Google and Oratomic simultaneously published papers showing that ECC-256 encryption can be broken with far fewer quantum qubits than previously expected. In response, Google and Cloudflare dramatically moved their PQC migration deadline up from 2035 to <strong>2029</strong>.
+</div>
+
+<h2 class="section-heading">Opening</h2>
+
+<p>Word is going around that the shift to post-quantum cryptography has been moved up to 2029. Google and Cloudflare had previously planned to complete their PQC transition by 2035, in line with the U.S. government's published timeline. Recently (April 2026), though, they pulled that deadline in dramatically, to 2029. What's behind this?</p>
+
+<h2 class="section-heading">The Startup: Oratomic</h2>
+
+<p>First, you need to know about a company called <strong>Oratomic</strong>. Oratomic is a stealth startup that came out of hiding on March 30, 2026. "Stealth startup" literally means a startup that doesn't disclose what it's working on to the public — and this paper is what revealed the direction the company is actually headed. Oratomic states its mission on its homepage as follows:</p>
+
+<blockquote class="blockquote">At Oratomic, we are building the world's first utility-scale quantum computers, enabled by a new regime of ultra-efficient error correction — using only light and atoms.</blockquote>
+
+<p>In other words, their goal is a <strong>utility-scale</strong> quantum computer — one large enough to directly solve real-world problems — i.e., a Fault-Tolerant Quantum Computer (FTQC). Looking at Oratomic's key people, they come from Caltech, Harvard, Google Quantum AI, Amazon, and UC Berkeley — it's fair to call them some of the sharpest minds of this era.</p>
+
+<h2 class="section-heading">Why This Became a Big Deal</h2>
+
+<p>Google and Oratomic each recently published papers showing that breaking elliptic curve cryptography requires far fewer qubits than previously assumed, and it caused a huge stir. Let's start with Google's paper.</p>
+
+<p>📄 <a href="https://arxiv.org/abs/2603.28846" target="_blank" rel="noopener">Securing Elliptic Curve Cryptocurrencies against Quantum Vulnerabilities: Resource Estimates and Mitigations ↗</a></p>
+
+<div class="alert alert-info">
+  <strong>This paper's conclusion</strong><br>
+  Google re-optimized the algorithm needed to break ECC-256 (Elliptic Curve Cryptography) — the core cryptography behind modern blockchains — and recalculated the resources required. The result was dramatically lower than expected:
+  <ul class="mb-0">
+    <li>Under 1,200 logical qubits + under 90 million Toffoli gates, or</li>
+    <li>Under 1,450 logical qubits + under 70 million Toffoli gates</li>
+  </ul>
+</div>
+
+<p>Either of those is enough to break ECC. In terms of physical qubits, that comes out to under 500,000 — a <strong>20x reduction</strong> from the 13 million qubits estimated back in 2022 (Webber et al.).</p>
+
+<p><small class="text-muted"><strong>*Shor's Algorithm:</strong> a quantum computing algorithm developed in 1994 that can break both elliptic curve cryptography (ECC) and RSA (used by most banks). It's the core threat to the signature schemes used by Bitcoin and Ethereum. Computing a public key from a private key is easy, but reversing a public key back into a private key is effectively impossible on a classical computer — Shor's algorithm makes that computation feasible.</small></p>
+
+<p><small class="text-muted"><strong>**Physical qubits:</strong> the basic unit of real hardware. They're noisy, so complex computation is impossible without error correction.<br><strong>**Logical qubits:</strong> a "clean" unit made by bundling dozens to hundreds of physical qubits together with automatic error correction — this is what actual algorithms use.</small></p>
+
+<h2 class="section-heading">Core Techniques</h2>
+
+<p>Here's how Google cut down the resources required for the attack.</p>
+
+<h3>(1) Redesigning Shor's Algorithm</h3>
+
+<p>The part of Shor's algorithm that repeats elliptic curve point addition consumes the most Toffoli gates. For ECC-256, Google <strong>cut the required 256 point additions down to 28</strong>, and optimized the internal arithmetic with Montgomery multiplication and "kickmix," compressing the Toffoli count by roughly 10x.</p>
+
+<ul>
+  <li>Before: 256 point additions × ~2.7M Toffoli gates each ≈ <strong>~700M total</strong></li>
+  <li>Redesigned (windowed arithmetic, window size = 16): 256 ÷ 16 = 16 steps × 2 registers = <strong>28</strong> windowed point additions</li>
+  <li>28 × ~2.7M Toffoli gates ≈ <strong>~75.6M total</strong></li>
+  <li>Montgomery trick + kickmix optimization → final Toffoli count <strong>&lt; 90M</strong> (roughly a 10x compression)</li>
+</ul>
+
+<h3>(2) Shortening Magic State Distillation</h3>
+
+<p>Running a Toffoli gate requires a continuous supply of a special quantum state called a "T state." Producing it has historically consumed most of a quantum computer's resources. Because computing with a "dirty" T state gives wrong answers, you have to run a factory that purifies dirty T states into clean ones — and that process wastes so many T states (anywhere from 15:1 to 225:1) that most of the machine ends up dedicated to the factory. Google parallelized and densified this factory to remove the bottleneck in producing clean T states.</p>
+
+<ul>
+  <li>Before (1-level distillation): 15 dirty T states → 1 clean T state (15:1)</li>
+  <li>Before (2-level distillation): 225 dirty T states → 1 clean T state (225:1) → ~80–90% of the machine's resources spent on the factory</li>
+  <li>Google's improvement: densely packing the factory with a "yoked surface code," plus reaction-limited execution to minimize idle time → the same physical qubits now produce more T states in parallel</li>
+</ul>
+
+<h3>(3) Shor's Algorithm Priming</h3>
+
+<p>Running Shor's algorithm breaks down into two stages.</p>
+
+<p>This is where the concept of "priming" comes in: run stage 1 ahead of time and keep it "loaded," then execute only stage 2 the moment a public key is exposed. By finishing the prep stage and waiting, an attacker can start reversing a private key the instant an individual public key hits the mempool — cutting the time required roughly in half.</p>
+
+<ul>
+  <li>Without priming: public key exposed → stage 1 (~9–12 min) + stage 2 = ~18–23 min total → exceeds block time (~10 min) → on-spend attack not feasible</li>
+  <li>With priming: [beforehand] stage 1 already complete → [the moment the key is exposed] only stage 2 runs → ~9 min → on-spend attack succeeds with ~41% probability</li>
+  <li>Additional optimization via state reuse: reusing stage-1 state lets a single prep attack up to 9 public keys in a row</li>
+</ul>
+
+<div class="alert alert-warning">
+  <strong>Notable</strong><br>
+  Google didn't actually implement any of this — they only produced the design and completed the calculations. Anticipating that bad actors could exploit it, they decided, after discussions with the U.S. government, not to release the design itself. Instead, they published only a zero-knowledge proof of the calculation's correctness.
+  <br><br>
+  Also, the paper's design calls for 1,200 logical qubits, while the largest number of logical qubits humanity has actually built so far is 48 (as of 2023) — so this isn't imminent. But it's a warning that far fewer resources are needed than previously thought, so preparation needs to start now.
+</div>
+
+<h2 class="section-heading">Why This Matters</h2>
+
+<p>ECDSA elliptic curve cryptography is used across a huge range of existing cryptographic systems — from personal certificates to the smart contracts behind cryptocurrencies. Its security rests entirely on the assumption that solving the elliptic curve discrete logarithm problem (ECDLP) is effectively impossible.</p>
+
+<p>If that assumption falls apart as quantum computers advance, a large amount of intangible financial assets could vanish from people's wallets in an instant.</p>
+
+<p>Most blockchains, including Bitcoin and Ethereum, use secp256k1-based ECDSA to sign transactions — so this isn't a purely theoretical threat. An attacker could intercept transactions, hijack administrative control of a smart contract, or arbitrarily move funds out of someone else's wallet.</p>
+
+<h2 class="section-heading">This Isn't the End</h2>
+
+<p>The Oratomic paper mentioned earlier takes this one step further.</p>
+
+<p>📄 <a href="https://arxiv.org/abs/2603.28627" target="_blank" rel="noopener">Shor's algorithm is possible with as few as 10,000 reconfigurable atomic qubits ↗</a></p>
+
+<div class="alert alert-success">
+  <strong>This paper's conclusion</strong><br>
+  Just <strong>26,000 physical qubits</strong> are enough to break ECC-256 within a matter of days.
+</div>
+
+<p>Oratomic took Google's physical-layer optimizations to Shor's algorithm as a given, and layered on top of it a <strong>neutral-atom-based physical layer optimization</strong>.</p>
+
+<div class="table-responsive">
+  <table class="table table-bordered table-striped">
+    <thead>
+      <tr>
+        <th>Aspect</th>
+        <th>Google (Superconducting)</th>
+        <th>Oratomic (Neutral Atom)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Physical qubits</td>
+        <td>&lt; 500,000</td>
+        <td>~26,000</td>
+      </tr>
+      <tr>
+        <td>Error correction</td>
+        <td>Surface code</td>
+        <td>qLDPC (lifted-product)</td>
+      </tr>
+      <tr>
+        <td>Physical:logical ratio</td>
+        <td>~1,000 : 1</td>
+        <td>~3.6 : 1</td>
+      </tr>
+      <tr>
+        <td>ECC-256 attack time</td>
+        <td>~9 minutes</td>
+        <td>~10 days</td>
+      </tr>
+      <tr>
+        <td>Attack type</td>
+        <td>On-spend</td>
+        <td>At-rest (dormant funds)</td>
+      </tr>
+      <tr>
+        <td>Hardware clock</td>
+        <td>Fast (~µs)</td>
+        <td>Slow (~ms)</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h2 class="section-heading">Oratomic's Core Logic</h2>
+
+<h3>(1) qLDPC (Quantum Low-Density Parity-Check) Codes</h3>
+
+<p>This is the new error-correction scheme Oratomic proposes.</p>
+
+<p>First, a bit of background on qubits: they're extremely unstable, and even a slight interaction with the outside world — temperature, vibration, electromagnetic waves — can corrupt a qubit's state. Since computing with a corrupted state gives the wrong answer, qubit errors have to be corrected.</p>
+
+<p>Classical computers correct errors by simply copying data across multiple bits and taking the majority value when checking. Quantum computers can't do that — the laws of quantum mechanics don't allow you to copy the original bit's data. So instead of copying, a quantum computer spreads a value across multiple qubits.</p>
+
+<p><small class="text-muted"><strong>*A quirk of quantum mechanics:</strong> a qubit's defining feature is superposition — it holds a state that is both 0 and 1 at once, but the moment you read it, it collapses to either 0 or 1 and the original value is lost. Because the "original" you'd want to copy disappears the instant you read it, it simply cannot be copied.</small></p>
+
+<p>Error correction on a quantum computer works via a method called the <strong>surface code</strong>: an auxiliary physical qubit (an "ancilla") is placed somewhere it can become entangled with a given physical qubit, and measuring that relationship reveals whether something changed — without ever directly measuring the physical qubit itself. But in the surface code, the physical layer is arranged so an ancilla can only entangle with its immediate neighbors, meaning a single ancilla can verify at most 4 physical qubits. As a result, the number of physical qubits actually usable for computation dropped sharply.</p>
+
+<p>Google's paper, discussed above, also uses the widely-adopted surface code — and it ends up spending 97% of its physical qubits on error correction, leaving only 3% available for actual computation.</p>
+
+<figure class="text-center">
+  <img class="img-fluid" src="{{ '/img/posts/pqc-qldpc-vs-surface-code.png' | relative_url }}" alt="Diagram comparing the surface code and Oratomic's lifted-product qLDPC error correction">
+  <figcaption class="caption text-muted mt-2">
+    Surface code (left): each ancilla (A) only connects to its immediate neighbors, checking at most 4 qubits, for a physical:logical ratio of ~1,000:1.<br>
+    Oratomic's lifted-product qLDPC (right): non-neighbor connections are allowed, so each ancilla checks 6–12 qubits, for a ratio of ~3.6:1.
+  </figcaption>
+</figure>
+
+<p>Oratomic's proposal uses <strong>optical tweezers</strong> — a highly focused laser beam — to physically pick up neutral atoms and let an ancilla entangle with physical qubits that aren't its immediate neighbors. That lets a single ancilla check the error state of 6 to 12 physical qubits instead of 4. It's harder to implement than the surface code, but it drops the number of physical qubits required from Google's 500,000 down to 26,000 — roughly a <strong>20x reduction</strong>.</p>
+
+<div class="row text-center my-4">
+  <div class="col-4">
+    <div class="h3 text-danger mb-0">97%</div>
+    <small class="text-muted">of qubits spent on surface-code error correction</small>
+  </div>
+  <div class="col-4">
+    <div class="h3 mb-0">6–12</div>
+    <small class="text-muted">qubits checked per qLDPC ancilla</small>
+  </div>
+  <div class="col-4">
+    <div class="h3 text-success mb-0">~20x</div>
+    <small class="text-muted">fewer physical qubits than Google's approach</small>
+  </div>
+</div>
+
+<div class="alert alert-warning">
+  <strong>Notable</strong><br>
+  Oratomic's approach has its own weakness, of course — breaking ECC-256 with this architecture takes <strong>10 days</strong>.
+</div>
+
+<h2 class="section-heading">Why Oratomic's Paper Is a Problem</h2>
+
+<p>Because of that, what Oratomic's research really targets isn't an on-spend attack, but an <strong>at-rest attack</strong> — one against funds that are already sitting exposed. According to Oratomic, roughly <strong>6.7 million</strong> bitcoins are already vulnerable to a quantum attack today, meaning their public keys are already exposed.</p>
+
+<p>And the largest neutral-atom quantum computer in the world already has 6,100 qubits. It used to be said that millions of qubits would be needed — in ten years, the number required has dropped by more than <strong>30,000x</strong>. The drop over just the last year has been the steepest, and the most alarming. 2029 is the target date, but there's no telling what quantum computing breakthrough might happen before then.</p>
+
+<figure class="text-center">
+  <img class="img-fluid" src="{{ '/img/posts/pqc-qubit-reduction-timeline.png' | relative_url }}" alt="Chart showing the number of physical qubits required for Shor's algorithm dropping from about 1 billion in 2012 to about 26,000 in 2026">
+  <figcaption class="caption text-muted mt-2">Physical qubits required to run Shor's algorithm, 2012–2026 (log scale)</figcaption>
+</figure>
+
+<div class="table-responsive">
+  <table class="table table-bordered table-striped">
+    <thead>
+      <tr>
+        <th>Year</th>
+        <th>Source</th>
+        <th>Physical qubits required</th>
+        <th>Reduction</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>2012</td>
+        <td>Early estimate</td>
+        <td>~1 billion</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>2019</td>
+        <td>Gidney &amp; Ekerå (RSA baseline)</td>
+        <td>~20 million</td>
+        <td>50x↓</td>
+      </tr>
+      <tr>
+        <td>2022</td>
+        <td>Webber et al.</td>
+        <td>~13 million</td>
+        <td>77x↓</td>
+      </tr>
+      <tr>
+        <td>2026.03</td>
+        <td>Google (Babbush et al.)</td>
+        <td>&lt; 500,000</td>
+        <td>26x↓</td>
+      </tr>
+      <tr>
+        <td>2026.03</td>
+        <td>Oratomic (Cain et al.)</td>
+        <td>~26,000</td>
+        <td>19x↓</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<p><small class="text-muted">※ From 2012 to Oratomic's 2026 figure: roughly a <strong>38,000x</strong> reduction overall.</small></p>
+
+<h2 class="section-heading">How Each Organization Is Responding</h2>
+
+<div class="row">
+  <div class="col-md-6 mb-4">
+    <h4>🤖 Google Android 17</h4>
+    <p>Integrated ML-DSA into the Android Hardware Root of Trust, and updated app signing and verification to support PQC.</p>
+  </div>
+  <div class="col-md-6 mb-4">
+    <h4>CF Cloudflare</h4>
+    <p>Targeting ML-DSA-based post-quantum authentication support by mid-2026, and Merkle Tree Certificates between visitors and Cloudflare by mid-2027. Moved its PQC migration deadline up to 2029.</p>
+  </div>
+  <div class="col-md-6 mb-4">
+    <h4>ETH Ethereum</h4>
+    <p>Announced plans to implement a protocol-level PQC solution by 2029.</p>
+  </div>
+  <div class="col-md-6 mb-4">
+    <h4>GOV U.S. / European government agencies</h4>
+    <p>As of April 12, 2026, no significant announcement or schedule change yet.</p>
+  </div>
+</div>
+
+<h2 class="section-heading">Closing</h2>
+
+<p>A threat that once felt safely far off has, before we knew it, arrived at our doorstep. Alongside the advance of AI, security is facing a growing wave of new threats. It seems the only real option is to think and prepare a step ahead. If I get the chance, I plan to write a follow-up post on actually using PQC libraries in practice.</p>
+
+<hr>
+
+<p><small class="text-muted"><em>Note: the original author is not a cryptography expert. If anything here is inaccurate, corrections are welcome.</em></small></p>
+
+<p><small class="text-muted">
+References (from the original post):<br>
+"양자 컴퓨팅 시점에 대한 암호공학 엔지니어의 관점" — <a href="https://news.hada.io/topic?id=28284&utm_source=slack&utm_medium=bot&utm_campaign=T042ABMLKJN" target="_blank" rel="noopener">news.hada.io</a><br>
+"Quantum frontiers may be closer than they appear" — <a href="https://blog.google/innovation-and-ai/technology/safety-security/cryptography-migration-timeline/" target="_blank" rel="noopener">blog.google</a><br>
+"Google sets 2029 deadline for quantum-safe encryption, years ahead of government targets" — <a href="https://www.techspot.com/news/111856-google-sets-2029-deadline-quantum-safe-encryption-years.html" target="_blank" rel="noopener">techspot.com</a><br>
+"디지털자산과 양자, 그리고 AI" — <a href="https://securities.miraeasset.com/bbs/download/2143565.pdf?attachmentId=2143565" target="_blank" rel="noopener">miraeasset.com</a>
+</small></p>
