@@ -1,6 +1,6 @@
-# suy-lee.github.io
+# slee2407.github.io
 
-Suy Lee's personal blog, built with [Jekyll](https://jekyllrb.com/) using the
+Suyeon Lee's personal blog, built with [Jekyll](https://jekyllrb.com/) using the
 [Clean Blog](https://startbootstrap.com/theme/clean-blog) theme and deployed
 via GitHub Pages.
 
