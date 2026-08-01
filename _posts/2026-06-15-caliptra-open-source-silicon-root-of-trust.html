@@ -1,0 +1,359 @@
+---
+layout: post
+title: "Caliptra: An Open-Source Silicon Root of Trust"
+subtitle: "OCP, CHIPS Alliance, and the move to putting a root of trust inside the die"
+date: 2026-06-15 20:52:46 +0900
+background: '/img/bg-post.jpg'
+---
+
+<p><em>Translated and adapted from the Korean original, <a href="https://r-note.tistory.com/166" target="_blank" rel="noopener">"Caliptra: 오픈소스 실리콘 Root of Trust"</a> by Ishmael (r-note.tistory.com).</em></p>
+
+<blockquote class="blockquote">I wanted to write up Caliptra, the open-source silicon Root of Trust that's changing the game for datacenter chip security. Starting from its relationship with OCP (Open Compute Project), I'll go through its history and its current (2.x) hardware/software architecture, then finish by comparing it with ARM's answer to the same problem: RSE (Runtime Security Engine).</blockquote>
+
+<h2 id="toc">Table of Contents</h2>
+<ol>
+  <li><a href="#1-introduction">Introduction</a></li>
+  <li><a href="#2-caliptras-relationship-with-ocp">Caliptra's Relationship with OCP</a></li>
+  <li><a href="#3-caliptra-history">Caliptra History</a></li>
+  <li><a href="#4-caliptra-hardware-architecture">Caliptra Hardware Architecture (as of 2.x)</a></li>
+  <li><a href="#5-caliptras-core-features">Caliptra's Core Features</a></li>
+  <li><a href="#6-caliptra-software-architecture">Caliptra Software Architecture</a></li>
+  <li><a href="#7-comparison-with-arm-rse">Comparison with ARM RSE</a></li>
+  <li><a href="#8-wrap-up">Wrap-up</a></li>
+</ol>
+
+<h2 class="section-heading" id="1-introduction">1. Introduction</h2>
+
+<p>Caliptra was announced in 2022, and after a period where only the spec and code existed, 2026 is when chips that actually integrate Caliptra are starting to show up in the real market. That means we're entering an era where GPUs, SSDs, NICs, and other datacenter devices come with a "root of trust baked into the die" as standard equipment. So I think now is a good time to write this technology up.</p>
+
+<p>Looking at where it's actually being deployed makes the momentum feel more real.</p>
+<ul>
+  <li><strong>Microsoft &amp; Google mandates:</strong> both companies now require Caliptra-based RoT in every compute, networking, and storage controller chip supplied into their datacenters. It's effectively being forced across the entire supply chain.</li>
+  <li><strong>Google's first-party silicon:</strong> Google is integrating Caliptra into its own custom CPU/GPU/DPU/BMC/SSD chips, and requiring the same from external suppliers.</li>
+  <li><strong>Storage controllers:</strong> SSD controller vendors like ScaleFlux have announced adoption. This area naturally dovetails with OCP L.O.C.K. (SED key management), covered later.</li>
+  <li><strong>Microsoft Azure infrastructure:</strong> Microsoft is folding Caliptra 2.0/2.1, including Adams Bridge (PQC), into its infrastructure security architecture.</li>
+</ul>
+<p>For reference, NVIDIA and AMD are founding members, but there isn't much officially published detail on which specific production products (e.g., which GPU generation) shipped with which version, so I won't make claims about that here.</p>
+
+<p>This post covers:</p>
+<ul>
+  <li>Caliptra's relationship with OCP (who defines the spec, who implements it)</li>
+  <li>The background behind Caliptra's creation and its version history (1.0 → 2.0 → 2.1)</li>
+  <li>Its full hardware/software architecture as it stands today</li>
+  <li>A point-by-point comparison with ARM RSE</li>
+</ul>
+
+<h2 class="section-heading" id="2-caliptras-relationship-with-ocp">2. Caliptra's Relationship with OCP</h2>
+
+<p>To really understand Caliptra, you first need to know where it came from. The short answer: <strong>Caliptra is the result of a requirement set by a consortium called OCP</strong>. So this section starts with what OCP is, then covers why OCP and Caliptra are linked, and finally the governance structure that splits the spec from the implementation.</p>
+
+<h3>What OCP Is</h3>
+<p><strong>OCP (Open Compute Project)</strong> is an open hardware consortium founded in 2011, led by Facebook (now Meta). It's where datacenter hardware designs — servers, racks, networking, storage — get published and standardized. Meta, Microsoft, Google, Intel, AMD, and NVIDIA are among its members, and it's also the venue where hyperscalers jointly define requirements like "this is what the hardware we buy needs to look like."</p>
+<p>It shares a lot of members with DMTF, but the roles differ. In short: DMTF defines protocol standards (SPDM, MCTP, PLDM), while OCP defines hardware design and security requirements.</p>
+
+<h3>What the OCP Security Group Produces</h3>
+<div class="table-responsive">
+  <table class="table table-bordered table-striped">
+    <thead><tr><th>Deliverable</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td>Project Cerberus</td><td>A board-level RoT spec Microsoft contributed. A separate RoT chip on the board that verifies platform firmware.</td></tr>
+      <tr><td>Attestation Spec v1.0</td><td>Attestation requirements for datacenter devices. Adopts DMTF SPDM as the attestation protocol.</td></tr>
+      <tr><td>OCP S.A.F.E.</td><td>Security Appraisal Framework and Enablement — a third-party security audit framework.</td></tr>
+      <tr><td>OCP L.O.C.K.</td><td>Layered Open-source Cryptographic Key-management — a key-management layer for self-encrypting storage (SED). Implemented in Caliptra 2.1.</td></tr>
+      <tr><td>Caliptra</td><td>A silicon RoT integrated into the die itself. The subject of this post.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Why OCP and Caliptra Are Linked</h3>
+<p>Looking at just the table above, Caliptra might seem like just one of OCP's many deliverables. The relationship is actually more direct than that. In short: <strong>Caliptra is the concrete answer to a requirement OCP created.</strong></p>
+<p>Tracing the flow:</p>
+<ul>
+  <li><strong>Defining the requirement:</strong> hyperscalers established, within OCP, the direction that "every chip entering a datacenter must have a verifiable root of trust inside the die." The Attestation Spec and Project Cerberus are what turned that requirement into documents.</li>
+  <li><strong>Defining the implementation:</strong> requirements alone don't produce a chip. So a concrete implementation — "an open-source silicon RoT integrated into the die" — was defined, and that's Caliptra.</li>
+  <li><strong>Spec management:</strong> Caliptra's "Silicon RoT Services" spec is owned and revised by the OCP Security group. In other words, Caliptra is formally part of OCP's standards track.</li>
+  <li><strong>Exposing attestation results:</strong> the measurements and signatures Caliptra produces are delivered to the platform via SPDM, which the OCP Attestation Spec adopted. The producer (Caliptra) and the delivery protocol (OCP-adopted SPDM) mesh together within one ecosystem.</li>
+</ul>
+<p>To sum up: OCP is the venue that decides "what's needed" (requirements/standards), and Caliptra is the answer to "so what goes inside the chip" (implementation). That's why this post covers OCP alongside Caliptra.</p>
+
+<h3>Dual Governance: OCP Owns the Spec, CHIPS Alliance Owns the Implementation</h3>
+<p>There's one more layer here. Personally, I find the split governance the most distinctive part of Caliptra.</p>
+<ul>
+  <li><strong>Spec (requirements):</strong> managed by the OCP Security group. Defines the "Silicon RoT Services" a datacenter SoC must provide.</li>
+  <li><strong>Implementation (RTL + firmware):</strong> managed by CHIPS Alliance, under the Linux Foundation. Develops the SystemVerilog RTL and Rust firmware as open source.</li>
+</ul>
+
+<pre><code>┌──────────────────────────┐    adopts SPDM as      ┌──────────────────────┐
+│ OCP                      │    attestation proto   │ DMTF                 │
+│  · Caliptra Spec         │ ─────────────────────&gt; │  · SPDM (DSP0274)    │
+│  · Attestation Spec v1.0 │                        │  · MCTP / PLDM       │
+│  · Project Cerberus      │                        └──────────────────────┘
+│  · S.A.F.E. / L.O.C.K.   │
+└────────────┬─────────────┘
+             │  specification
+</code></pre>
+
+<p>To put it simply: OCP draws the blueprint, and CHIPS Alliance embodies it. OCP's spec defines "what" to build; CHIPS Alliance turns that into working RTL and firmware code that defines "how."</p>
+<p>One thing worth noting: both of these are governance bodies (who manages and revises), not the ones actually manufacturing chips. The blueprint (OCP) and the reference implementation (CHIPS Alliance) are both open source, and chip vendors like AMD, NVIDIA, and Google take them and integrate/mass-produce them into their own SoCs. Here's the full chain:</p>
+
+<pre><code>OCP blueprint (spec)
+  └─&gt; CHIPS Alliance reference implementation (RTL + Rust FW)
+        └─&gt; chip vendors integrate/customize into their own die
+              └─&gt; production chips (GPU / SSD / NIC / CPU ...)
+</code></pre>
+
+<p>This structure — spec open, implementation open — is Caliptra's core strength: vendors can take it for free, and modify it if they need to.</p>
+
+<h3>Cerberus vs. Caliptra: Division of Labor</h3>
+<p>Both are OCP RoTs, but they sit in different places. Cerberus is board-level (a separate chip that verifies a platform's entire firmware), while Caliptra is inside the die (each SoC/ASIC's own measurement and identity). In a datacenter platform, the two coexist: think of a Cerberus-style platform RoT acting as the SPDM Requester, collecting the measurements backed by the Caliptra inside each device.</p>
+
+<h2 class="section-heading" id="3-caliptra-history">3. Caliptra History</h2>
+
+<h3>Background: The Limits of External RoTs</h3>
+<p>A TPM or a separate RoT chip (including Cerberus) is a component outside the package. That created clear limitations:</p>
+<ul>
+  <li><strong>Interposer attacks:</strong> exposed to physical attacks that intercept signals between the chip and the board.</li>
+  <li><strong>Vendor fragmentation:</strong> every device implements RoT differently, which is expensive for hyperscalers to validate.</li>
+  <li><strong>Opacity:</strong> closed firmware makes auditing impossible.</li>
+</ul>
+<p>Hyperscalers reached a clear conclusion: put the root of trust inside the die, and open-source the entire design.</p>
+
+<h3>Timeline</h3>
+<div class="table-responsive">
+  <table class="table table-bordered table-striped">
+    <thead><tr><th>Period</th><th>Event</th></tr></thead>
+    <tbody>
+      <tr><td>2022.10</td><td>Announced at the OCP Global Summit: a joint effort by Google, Microsoft, AMD, and NVIDIA</td></tr>
+      <tr><td>2023</td><td>Caliptra 1.0: an RTM (RoT for Measurement) core — DICE identity, measured boot, a signing oracle</td></tr>
+      <tr><td>2024–25</td><td>Caliptra 2.0: PQC introduced (Adams Bridge, ML-DSA), Subsystem mode, streaming boot, ownership transfer</td></tr>
+      <tr><td>2025–26</td><td>Caliptra 2.1: Adams Bridge 2.0 (ML-DSA + ML-KEM, hardened side-channel resistance), OCP L.O.C.K. key management implemented</td></tr>
+      <tr><td>2026</td><td>Chips integrating Caliptra begin appearing on the market</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Why PQC Was Adopted Early</h3>
+<p>The most striking decision in Caliptra 2.x is building post-quantum cryptography (PQC) in as a hardware accelerator (Adams Bridge). The motivation is the "harvest now, decrypt later" attack model — collect ciphertext now, decrypt it once quantum computers exist. Since a chip stays in the field for close to a decade after it ships, the calculation is that a chip manufactured in 2026 needs PQC built in now to stay safe for its whole lifecycle. It supports both NIST standards: ML-DSA (signatures) and ML-KEM (key encapsulation).</p>
+
+<h3>Building Trust</h3>
+<p>Being open source isn't the end of the story — what's striking is the layers of verification that openness makes possible:</p>
+<ul>
+  <li>Cross-review by the security teams of member companies (MS/Google/AMD/NVIDIA)</li>
+  <li>Third-party audit under OCP S.A.F.E. certification</li>
+  <li>Formal verification by outside vendors</li>
+  <li>The entire firmware written in Rust for memory safety</li>
+</ul>
+
+<h2 class="section-heading" id="4-caliptra-hardware-architecture">4. Caliptra Hardware Architecture (as of 2.x)</h2>
+
+<h3>Overall Block Diagram</h3>
+<pre><code>┌───────────────────────────── Caliptra IP Block ─────────────────────────────┐
+│                                                                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────────────┐ │
+│  │ VeeR EL2     │  │ ROM          │  │ Crypto Engines                     │ │
+│  │ RISC-V       │  │ (immutable)  │  │  SHA-256/384/512   HMAC    AES     │ │
+│  │ RV32IMC      │  └──────────────┘  │  ECC P-384         TRNG            │ │
+│  └──────────────┘                    │  Adams Bridge (PQC: ML-DSA/ML-KEM) │ │
+│                                       └────────────────────────────────────┘ │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐  │
+│  │ ICCM (128KB) │  │ DCCM (128KB) │  │ Key Vault     │  │ Fuse Interface  │  │
+│  │ instr. only  │  │ data only    │  │ PCR / Data    │  │ UDS / Field     │  │
+│  └──────────────┘  └──────────────┘  │ Vault         │  │ Entropy         │  │
+│                                       └──────────────┘  └─────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │ Mailbox — the SoC's only channel to send Caliptra commands            │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────────────┘
+</code></pre>
+
+<p>Here are the key components:</p>
+<ul>
+  <li><strong>VeeR EL2:</strong> an RV32IMC RISC-V core. A verified open-source core from CHIPS Alliance that runs only Caliptra's own firmware.</li>
+  <li><strong>ICCM/DCCM, 128KB each:</strong> tightly-coupled memory dedicated to instructions/data. Only firmware verified by the ROM gets loaded into ICCM.</li>
+  <li><strong>Crypto engines:</strong> classic algorithms like SHA, HMAC, AES, and ECC P-384, plus the Adams Bridge PQC accelerator starting in 2.x (covered separately below).</li>
+  <li><strong>Key Vault / PCR Vault / Data Vault:</strong> personally, I think this is the crown jewel of Caliptra's design. Not even the CPU can read key material in plaintext — keys only flow between vault slots and engines. Even if the firmware is fully compromised, key material never leaks.</li>
+  <li><strong>Fuse interface:</strong> supplies the UDS (Unique Device Secret) and Field Entropy from fuses. The UDS is the root of every identity.</li>
+  <li><strong>Mailbox:</strong> the sole channel through which the SoC sends commands to Caliptra (registering measurements, requesting signatures, etc.).</li>
+</ul>
+
+<h3>Adams Bridge: the PQC Hardware Accelerator</h3>
+<p><strong>Adams Bridge</strong> is the dedicated post-quantum cryptography (PQC) accelerator built into Caliptra 2.x. It was co-developed by AMD, Google, Microsoft, and NVIDIA, with the RTL also released publicly.</p>
+<blockquote class="blockquote">The name's origin is a fun one — it's a metaphor for a "bridge" spanning the huge gap between classical asymmetric cryptography (RSA/ECC) and post-quantum cryptography. It's named after the mythical land bridge connecting two landmasses (Adam's Bridge), a name given by Microsoft (Azure).</blockquote>
+<ul>
+  <li><strong>Unified datapath:</strong> processes the NIST-standard ML-DSA-87 (FIPS 204, signatures) and ML-KEM-1024 (FIPS 203, key encapsulation) in a single hardware block. It's designed to share the NTT/INTT (polynomial transform) and Keccak cores that both algorithms use, reducing area.</li>
+  <li><strong>Built-in side-channel resistance:</strong> applies masking, shuffling, and constant-time control/operations. TVLA (Test Vector Leakage Assessment) testing up to 1 million traces confirmed no first-order leakage. The key goal is making sure the RoT's key-derivation operations don't leak through power or timing side channels.</li>
+  <li><strong>Pipelined processing:</strong> a staged pipeline datapath streams NTT/INTT and hashing through. The reference implementation targets a 5nm process at 600MHz.</li>
+  <li><strong>Versions:</strong> Adams Bridge in 2.0 was ML-DSA-focused; Adams Bridge 2.0 in 2.1 adds ML-KEM and strengthens side-channel defenses.</li>
+</ul>
+<p>So why put a PQC accelerator inside the RoT at all? Because moving chip identity signing (IDevID/Alias) and firmware verification to PQC means that computation has to happen inside the RoT — fast, and side-channel safe. Handing it off to the SoC's AP would let key computation leak outside the trust boundary.</p>
+
+<h3>Passive Mode vs. Subsystem Mode (2.0+)</h3>
+<ul>
+  <li><strong>Passive (default in 1.x):</strong> Caliptra is an RTM handling only measurement and signing. Overall boot control stays with the existing boot chain.</li>
+  <li><strong>Subsystem (2.0+):</strong> adds an MCU (manufacturer control unit), I3C, and a recovery interface to Caliptra Core, extending it into the RoT for the entire SoC. This is where features like streaming boot (receiving firmware directly from the host with no local storage) and ownership transfer come from.</li>
+</ul>
+
+<h2 class="section-heading" id="5-caliptras-core-features">5. Caliptra's Core Features</h2>
+
+<p>Combining the hardware blocks and firmware, the "Silicon RoT Services" Caliptra provides to an SoC ultimately break down into four groups. I'll also cover the surrounding OCP-standardized frameworks (S.A.F.E., L.O.C.K.).</p>
+
+<h3>1) Measured Boot</h3>
+<p>The first thing Caliptra does is measure the integrity of itself and the SoC's firmware. It accumulates the hash of each boot stage and each external firmware image into the PCR Vault. That leaves a tamper-proof record of what actually got loaded, and that measurement becomes the basis for later attestation.</p>
+
+<h3>2) Attestation</h3>
+<p>When a host or platform RoT asks "are you genuine, and has your firmware changed?", Caliptra answers by signing the measurements with the chip's unique identity key. That identity key is derived from the UDS (the device secret in fuses). If the firmware changes, the measurement — and therefore the signature — changes with it, so tampering can't be hidden. Starting in 2.x, it issues both an ECC P-384 signature and a PQC (ML-DSA) signature.</p>
+
+<h3>3) Key Management</h3>
+<p>Key management is entirely handled by the Key Vault. Not even the CPU (firmware) can read key material in plaintext; keys only flow between vault slots and crypto engines. So even if the entire firmware is compromised, the identity keys specifically never leak. Personally, I think of this as the design's last line of defense.</p>
+
+<h3>4) Update &amp; Recovery</h3>
+<p>FMC/RT only update to images that pass signature verification. What's interesting here is Subsystem mode (2.0+): streaming boot (receiving firmware directly from the host with no local storage), a recovery path for restoring corrupted firmware, and even ownership transfer are all managed by the RoT.</p>
+
+<h3>Surrounding OCP Frameworks: S.A.F.E. and L.O.C.K.</h3>
+<p>Caliptra isn't a chip on its own — two frameworks the OCP Security group built around it pair up in real deployments.</p>
+<ul>
+  <li><strong>OCP S.A.F.E.</strong> (Security Appraisal Framework and Enablement): a framework standardizing third-party audits of firmware/RoT implementations by accredited security assessment labs (SALs). It turns the redundant cost of every hyperscaler separately auditing vendor firmware into a structure where "one audit, everyone trusts it." It's the channel through which an open RoT like Caliptra gets objective auditing.</li>
+  <li><strong>OCP L.O.C.K.</strong> (Layered Open-source Cryptographic Key-management): an open standard for self-encrypting storage (SED) key management built on top of Caliptra. The RoT manages the lifecycle (generation, sealing, unsealing) of drive encryption keys, so tampered firmware can never unlock the keys. Implemented in Caliptra 2.1.</li>
+</ul>
+<p>Together, these show OCP's layering clearly: RoT inside the chip (Caliptra) → audit (S.A.F.E.) → application domain (L.O.C.K., storage) — trust extending outward.</p>
+
+<h2 class="section-heading" id="6-caliptra-software-architecture">6. Caliptra Software Architecture</h2>
+
+<h3>The Staged Boot Chain: All Rust</h3>
+<p>Caliptra's internal firmware runs in three sequential stages: ROM → FMC → RT. Like ARM TF-A's BL1 → BL2 → BL31, this is a classic staged secure boot where each stage only loads and runs the next stage after verifying its signature. The difference: each stage accumulates the next stage's hash as a measurement, so the moment boot finishes, that becomes the basis for attestation. All three stages are written in Rust.</p>
+
+<pre><code> ┌──────────────┐               ┌──────────────┐               ┌──────────────┐
+ │     ROM      │──verify+load─&gt;│     FMC      │──verify+load─&gt;│      RT      │
+ │  immutable   │               │ first mutable│               │   runtime    │
+ └──────────────┘               └──────────────┘               └──────────────┘
+   ≈ TF-A BL1                     ≈ TF-A BL2                     ≈ TF-A BL31
+</code></pre>
+
+<div class="table-responsive">
+  <table class="table table-bordered table-striped">
+    <thead><tr><th>Stage</th><th>Nature</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td>ROM</td><td>Immutable</td><td>Decrypts the UDS, derives the first identity key, verifies and loads FMC/RT</td></tr>
+      <tr><td>FMC (First Mutable Code)</td><td>Minimal updatable code</td><td>An extension of ROM. Derives the Alias key from its own measurement</td></tr>
+      <tr><td>RT (Runtime)</td><td>Updatable</td><td>Services mailbox commands: registering measurements, querying certificates, signing</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Code Repository Structure</h3>
+<div class="table-responsive">
+  <table class="table table-bordered table-striped">
+    <thead><tr><th>Repo</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td>chipsalliance/Caliptra</td><td>Unified spec and documentation</td></tr>
+      <tr><td>chipsalliance/caliptra-rtl</td><td>Hardware RTL (SystemVerilog)</td></tr>
+      <tr><td>chipsalliance/caliptra-sw</td><td>ROM / FMC / RT firmware (Rust) + emulator and tests</td></tr>
+      <tr><td>chipsalliance/caliptra-mcu-sw</td><td>Subsystem-mode MCU firmware</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2 class="section-heading" id="7-comparison-with-arm-rse">7. Comparison with ARM RSE</h2>
+
+<h3>RSE in Brief</h3>
+<p><strong>RSE (Runtime Security Engine)</strong> is a hardware RoT and isolated attestation enclave built into ARM A-profile compute subsystems (e.g., Neoverse CSS).</p>
+<ul>
+  <li>HW: a Cortex-M55 core, dedicated SRAM banks, an MPC (Memory Protection Controller), ROM</li>
+  <li>FW: a runtime based on TF-M (Trusted Firmware-M)</li>
+  <li>Services: Measured Boot, Initial/Delegated Attestation, Crypto, ADAC (Authenticated Debug Access Control)</li>
+  <li>In ARM CCA (Confidential Compute Architecture), it acts as the HES Host</li>
+  <li>In the DICE scheme, it provides a DPE (DICE Protection Environment) implementation</li>
+  <li>Communicates with the AP over MHU (+ the SFCP protocol)</li>
+</ul>
+<p>The core idea — "an isolated security processor inside the die owns measurement, identity, and signing" — is identical to Caliptra. What differs is the ecosystem and how much is open.</p>
+
+<h3>Point-by-Point Comparison</h3>
+<pre><code> ┌──────────── Caliptra ─────────────┐   ┌───────────── ARM RSE ─────────────┐
+ │ CPU : RISC-V VeeR EL2 (RV32IMC)   │   │ CPU : Cortex-M55                  │
+ │ FW  : Rust  (ROM / FMC / RT)      │   │ FW  : TF-M (C)                    │
+ │ ID  : DICE  (IDevID -&gt; Alias)     │   │ ID  : DPE  /  PSA·CCA token       │
+ │ ATT : SPDM signing oracle         │   │ ATT : Initial/Delegated Attest    │
+ │ PQC : ML-DSA + ML-KEM (built-in)  │   │ PQC : roadmap                     │
+ │ RTL : open (SystemVerilog)        │   │ RTL : licensed IP                 │
+ └────────────────────────────────────┘   └────────────────────────────────────┘
+</code></pre>
+
+<div class="table-responsive">
+  <table class="table table-bordered table-striped">
+    <thead><tr><th>Axis</th><th>Caliptra</th><th>ARM RSE</th></tr></thead>
+    <tbody>
+      <tr><td>Governance</td><td>OCP spec + CHIPS Alliance implementation, fully open</td><td>ARM-designed. Only the firmware (TF-M) is open</td></tr>
+      <tr><td>RTL published</td><td>✅ Full SystemVerilog published</td><td>❌ Licensed subsystem IP</td></tr>
+      <tr><td>CPU</td><td>RISC-V VeeR EL2</td><td>Cortex-M55</td></tr>
+      <tr><td>Firmware language</td><td>Rust</td><td>C (TF-M)</td></tr>
+      <tr><td>Identity scheme</td><td>DICE (IDevID/LDevID/Alias)</td><td>DPE or PSA/CCA attestation tokens</td></tr>
+      <tr><td>Attestation exposure</td><td>SPDM signing oracle</td><td>PSA Initial Attestation, CCA attestation</td></tr>
+      <tr><td>PQC</td><td>ML-DSA + ML-KEM built into hardware</td><td>On the roadmap</td></tr>
+      <tr><td>Key protection</td><td>Key Vault (not even the CPU gets plaintext access)</td><td>Isolated SRAM + MPC</td></tr>
+      <tr><td>Primary target</td><td>Datacenter device SoCs</td><td>ARM SoCs (Neoverse CSS, CCA)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Things Worth Watching</h3>
+<ul>
+  <li><strong>Same problem, two ecosystems' answers.</strong> The requirement — "isolated in-die RoT + measured boot + attestation" — is identical. But Caliptra solves it as a horizontal open standard driven by hyperscalers, while RSE solves it as IP vertically integrated into the ARM platform.</li>
+  <li><strong>DICE vs. DPE: same TCG root, different layering.</strong> Caliptra implements DICE key derivation directly in its own ROM/FMC/RT chain, while RSE provides DICE layering to the outside (the AP's boot stages) as a service called DPE.</li>
+  <li><strong>Not mutually exclusive.</strong> Integrating Caliptra into an ARM SoC is a real possibility. In fact, the OCP camp's actual position is closer to "ISA-agnostic — any chip entering a datacenter should have Caliptra-level RoT Services." I think a realistic future looks like an ARM server SoC with RSE, and a GPU/SSD with Caliptra embedded, mutually attesting to each other over SPDM on the same platform.</li>
+</ul>
+
+<h2 class="section-heading" id="8-wrap-up">8. Wrap-up</h2>
+
+<p>In one line:</p>
+<blockquote class="blockquote">OCP defines the requirements (spec), CHIPS Alliance implements them as open source (RTL + Rust FW), and the result, Caliptra, signs measurements with a DICE identity.</blockquote>
+
+<p>The shift from the TPM era's "separate chip on the board" to "open-source RoT inside the die" feels like a signal that the baseline for hardware trust is moving from vendor goodwill to a verifiable, public design. Given that it ships with PQC built in from the start and is already showing up in 2026 production chips, I think it's fair to call Caliptra the de facto standard candidate for datacenter silicon security, for now.</p>
+
+<p>In the next post, I plan to build the caliptra-sw emulator myself, watch the ROM → FMC → RT boot sequence in action, and pull a DICE certificate chain out via a mailbox command as a hands-on exercise.</p>
+
+<hr>
+
+<h2 id="references">References</h2>
+
+<h4>Official Specs / Docs</h4>
+<ul>
+  <li><a href="https://chipsalliance.github.io/Caliptra/doc/Caliptra.html" target="_blank" rel="noopener">Caliptra official documentation (CHIPS Alliance)</a></li>
+  <li><a href="https://www.opencompute.org/documents/caliptra-2-0-pdf" target="_blank" rel="noopener">Caliptra 2.0 Specification (OCP)</a></li>
+  <li><a href="https://www.opencompute.org/documents/caliptra-silicon-rot-services-09012022-pdf" target="_blank" rel="noopener">Caliptra 1.0 Specification (OCP, 2022)</a></li>
+  <li><a href="https://chipsalliance.github.io/Caliptra/2.0/specification/HEAD/" target="_blank" rel="noopener">Caliptra 2.0 Specification (CHIPS Alliance rendering)</a></li>
+  <li><a href="https://www.opencompute.org/documents/attestation-v1-0-20201104-pdf" target="_blank" rel="noopener">OCP Attestation v1.0 Requirements</a></li>
+  <li><a href="https://www.opencompute.org/wiki/Security" target="_blank" rel="noopener">OCP Security Wiki</a></li>
+</ul>
+
+<h4>Source Code</h4>
+<ul>
+  <li><a href="https://github.com/chipsalliance/Caliptra" target="_blank" rel="noopener">chipsalliance/Caliptra — IP and integration docs</a></li>
+  <li><a href="https://github.com/chipsalliance/caliptra-sw" target="_blank" rel="noopener">chipsalliance/caliptra-sw — ROM/FMC/RT firmware (Rust)</a></li>
+  <li><a href="https://github.com/chipsalliance/caliptra-sw/blob/main/rom/dev/README.md" target="_blank" rel="noopener">caliptra-sw ROM README — DICE derivation details</a></li>
+  <li><a href="https://github.com/chipsalliance/caliptra-sw/blob/main/fmc/README.md" target="_blank" rel="noopener">caliptra-sw FMC README</a></li>
+  <li><a href="https://github.com/chipsalliance/caliptra-mcu-sw" target="_blank" rel="noopener">chipsalliance/caliptra-mcu-sw — Subsystem MCU firmware</a></li>
+</ul>
+
+<h4>News / Blogs</h4>
+<ul>
+  <li><a href="https://techcommunity.microsoft.com/blog/azureinfrastructureblog/caliptra-2-1-an-open-source-silicon-root-of-trust-with-enhanced-protection-of-da/4460758" target="_blank" rel="noopener">Microsoft — Caliptra 2.1: Enhanced Protection of Data At-Rest (L.O.C.K.)</a></li>
+  <li><a href="https://www.chipsalliance.org/news/caliptra2-1/" target="_blank" rel="noopener">CHIPS Alliance — Caliptra 2.1 RTL Release</a></li>
+  <li><a href="https://azure.microsoft.com/en-us/blog/protecting-azure-infrastructure-from-silicon-to-systems/" target="_blank" rel="noopener">Microsoft Azure — Protecting Azure Infrastructure from Silicon to Systems</a></li>
+  <li><a href="https://cloud.google.com/blog/topics/systems/google-security-innovation-at-the-ocp-regional-summit" target="_blank" rel="noopener">Google Cloud — Security Innovation at the OCP Regional Summit</a></li>
+  <li><a href="https://www.wolfssl.com/caliptra-your-silicons-security-chaperone/" target="_blank" rel="noopener">wolfSSL — Caliptra: Your Silicon's Security Chaperone</a></li>
+</ul>
+
+<h4>ARM RSE</h4>
+<ul>
+  <li><a href="https://trustedfirmware-m.readthedocs.io/en/latest/platform/arm/rse/readme.html" target="_blank" rel="noopener">TF-M — Runtime Security Engine (RSE) documentation</a></li>
+  <li><a href="https://neoverse-reference-design.docs.arm.com/en/latest/shared/rse.html" target="_blank" rel="noopener">Neoverse Reference Design — RSE</a></li>
+  <li><a href="https://trustedfirmware-a.readthedocs.io/en/latest/design_documents/rse.html" target="_blank" rel="noopener">TF-A — RSE design documentation</a></li>
+  <li><a href="https://www.trustedfirmware.org/docs/tech_forum_20231123_RTE_Introduction.pdf" target="_blank" rel="noopener">TrustedFirmware.org — RSE Introduction (2023 Tech Forum)</a></li>
+</ul>
+
+<h4>Related Standards</h4>
+<ul>
+  <li>DMTF DSP0274: SPDM (Security Protocol and Data Model)</li>
+  <li>TCG DICE Attestation Architecture</li>
+  <li>TCG DICE Protection Environment (DPE)</li>
+</ul>

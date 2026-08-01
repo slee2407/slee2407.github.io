@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="840" viewBox="0 0 1180 840" font-family="'Pretendard','Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrowDash" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1180" height="840" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="48" y="48" font-size="26" font-weight="700" fill="#0f172a">Caliptra DICE Certificate Chain</text>
+  <text x="48" y="74" font-size="15" fill="#64748b">Each stage signs (endorses) the next — together forming a Chain of Trust</text>
+
+  <!-- ===== Vendor ===== -->
+  <text x="60" y="150" font-size="15" font-weight="700" fill="#475569">VENDOR</text>
+  <rect x="60" y="160" width="200" height="78" rx="10" fill="#f1f5f9" stroke="#475569" stroke-width="2"/>
+  <text x="160" y="195" font-size="17" font-weight="700" fill="#1e293b" text-anchor="middle">Provisioner CA</text>
+  <text x="160" y="217" font-size="13" fill="#64748b" text-anchor="middle">(pCA) · = Root CA</text>
+
+  <!-- pCA -> IDevID -->
+  <path d="M260,199 L432,199" stroke="#334155" stroke-width="2.2" fill="none" marker-end="url(#arrow)"/>
+  <text x="346" y="190" font-size="14" font-weight="700" fill="#c2410c" text-anchor="middle">sign</text>
+  <text x="346" y="215" font-size="11" fill="#94a3b8" text-anchor="middle">endorse</text>
+
+  <!-- ===== Device header ===== -->
+  <text x="570" y="150" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle">DEVICE (Caliptra RoT)</text>
+
+  <!-- ===== Chain boxes ===== -->
+  <!-- IDevID -->
+  <rect x="440" y="160" width="260" height="78" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2.2"/>
+  <text x="570" y="194" font-size="18" font-weight="700" fill="#1d4ed8" text-anchor="middle">IDevID</text>
+  <text x="570" y="216" font-size="12.5" fill="#3b82f6" text-anchor="middle">Initial Device Identity</text>
+
+  <!-- arrow -->
+  <path d="M570,238 L570,288" stroke="#334155" stroke-width="2.2" fill="none" marker-end="url(#arrow)"/>
+  <text x="586" y="268" font-size="14" font-weight="700" fill="#c2410c" text-anchor="start">sign</text>
+
+  <!-- LDevID -->
+  <rect x="440" y="290" width="260" height="78" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2.2"/>
+  <text x="570" y="324" font-size="18" font-weight="700" fill="#1d4ed8" text-anchor="middle">LDevID</text>
+  <text x="570" y="346" font-size="12.5" fill="#3b82f6" text-anchor="middle">Local Device Identity</text>
+
+  <path d="M570,368 L570,418" stroke="#334155" stroke-width="2.2" fill="none" marker-end="url(#arrow)"/>
+  <text x="586" y="398" font-size="14" font-weight="700" fill="#c2410c" text-anchor="start">sign</text>
+
+  <!-- FMC Alias -->
+  <rect x="440" y="420" width="260" height="78" rx="10" fill="#f0fdfa" stroke="#0d9488" stroke-width="2.2"/>
+  <text x="570" y="454" font-size="18" font-weight="700" fill="#0f766e" text-anchor="middle">FMC Alias</text>
+  <text x="570" y="476" font-size="12.5" fill="#14b8a6" text-anchor="middle">First Mutable Code</text>
+
+  <path d="M570,498 L570,548" stroke="#334155" stroke-width="2.2" fill="none" marker-end="url(#arrow)"/>
+  <text x="586" y="528" font-size="14" font-weight="700" fill="#c2410c" text-anchor="start">sign</text>
+
+  <!-- RT Alias -->
+  <rect x="440" y="550" width="260" height="78" rx="10" fill="#f0fdfa" stroke="#0d9488" stroke-width="2.2"/>
+  <text x="570" y="584" font-size="18" font-weight="700" fill="#0f766e" text-anchor="middle">RT Alias</text>
+  <text x="570" y="606" font-size="12.5" fill="#14b8a6" text-anchor="middle">Runtime Firmware</text>
+
+  <path d="M570,628 L570,678" stroke="#334155" stroke-width="2.2" fill="none" marker-end="url(#arrow)"/>
+  <text x="586" y="658" font-size="14" font-weight="700" fill="#c2410c" text-anchor="start">sign</text>
+
+  <!-- DPE leaf -->
+  <rect x="440" y="680" width="260" height="78" rx="10" fill="#f0fdfa" stroke="#0d9488" stroke-width="2.2" stroke-dasharray="6 4"/>
+  <text x="570" y="714" font-size="18" font-weight="700" fill="#0f766e" text-anchor="middle">DPE leaf</text>
+  <text x="570" y="736" font-size="12.5" fill="#14b8a6" text-anchor="middle">runtime attestation</text>
+
+  <!-- ===== Group brackets (left of chain) ===== -->
+  <!-- Identity group -->
+  <path d="M418,168 q-12,0 -12,12 v176 q0,12 -12,12 q12,0 12,12 v0 q0,0 0,0" fill="none"/>
+  <path d="M420,164 q-14,0 -14,14 v74 q0,14 -14,14 q14,0 14,14 v74 q0,14 14,14" fill="none" stroke="#2563eb" stroke-width="2"/>
+  <text x="372" y="295" font-size="14.5" font-weight="700" fill="#2563eb" text-anchor="middle" transform="rotate(-90 372 295)">Identity certificates</text>
+
+  <!-- Attestation group -->
+  <path d="M420,424 q-14,0 -14,14 v104 q0,14 -14,14 q14,0 14,14 v104 q0,14 14,14" fill="none" stroke="#0d9488" stroke-width="2"/>
+  <text x="372" y="589" font-size="14.5" font-weight="700" fill="#0d9488" text-anchor="middle" transform="rotate(-90 372 589)">Attestation certificates</text>
+
+  <!-- ===== Right-side notes ===== -->
+  <!-- IDevID note -->
+  <line x1="700" y1="199" x2="742" y2="199" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="752" y="192" font-size="13.5" fill="#334155">Created at manufacturing · derived from UDS (fuse)</text>
+  <text x="752" y="212" font-size="13.5" fill="#334155">Endorsed by the vendor pCA</text>
+
+  <!-- LDevID note -->
+  <line x1="700" y1="329" x2="742" y2="329" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="752" y="316" font-size="13.5" fill="#334155">Derived from UDS + mixed with Field Entropy (fuse)</text>
+  <text x="752" y="336" font-size="13.5" fill="#334155">At field onboarding · verified by the owner via IDevID</text>
+  <text x="752" y="356" font-size="12" fill="#94a3b8">※ FE is optional — without it, generated from UDS alone</text>
+
+  <!-- FMC Alias note -->
+  <line x1="700" y1="459" x2="742" y2="459" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="752" y="446" font-size="13.5" fill="#334155">Records the FMC digest (SHA-384 measurement) + SVN in the cert</text>
+  <text x="752" y="466" font-size="13.5" fill="#334155">The Alias key itself is derived from the FMC hash (CDI_FMC)</text>
+  <text x="752" y="486" font-size="12" fill="#94a3b8">→ Changing even 1 byte of firmware changes the key and cert</text>
+
+  <!-- RT Alias note -->
+  <line x1="700" y1="589" x2="742" y2="589" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="752" y="582" font-size="13.5" fill="#334155">Reflects the Runtime FW measurement</text>
+  <text x="752" y="602" font-size="13.5" fill="#334155">FMC measures RT → trust propagates</text>
+
+  <!-- DPE note -->
+  <line x1="700" y1="719" x2="742" y2="719" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="752" y="712" font-size="13.5" fill="#334155">Endorsed by RT Alias</text>
+  <text x="752" y="732" font-size="13.5" fill="#334155">Remote attestation based on a freshness nonce</text>
+
+  <!-- ===== Legend ===== -->
+  <text x="48" y="792" font-size="12.5" fill="#64748b">Derivation root: UDS Seed / Field Entropy = OTP fuse  ·  Signature algorithms: ECDSA P-384 + ML-DSA-87 (PQC)</text>
+  <text x="48" y="812" font-size="12.5" fill="#94a3b8">Identity = "who is this device"  ·  Attestation = "what firmware is running right now (measurement)"</text>
+</svg>

@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="720" viewBox="0 0 960 720" font-family="'Pretendard','Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif">
+  <defs>
+    <marker id="der" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="960" height="720" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="44" y="40" font-size="23" font-weight="700" fill="#0f172a">Caliptra DICE Derivation Chain (rooted in UDS)</text>
+  <text x="44" y="63" font-size="14" fill="#64748b">Vertical arrows = key/CDI derivation · parentheses = the parent key that signs (endorses) that cert</text>
+
+  <!-- ============ UDS ============ -->
+  <rect x="85" y="86" width="300" height="58" rx="10" fill="#f1f5f9" stroke="#475569" stroke-width="2.2"/>
+  <text x="235" y="112" font-size="17" font-weight="700" fill="#1e293b" text-anchor="middle">UDS (eFuse)</text>
+  <text x="235" y="132" font-size="12" fill="#64748b" text-anchor="middle">device-unique hardware root secret</text>
+  <line x1="385" y1="115" x2="425" y2="115" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="435" y="119" font-size="12.5" fill="#64748b">immutable · the origin of all derivation</text>
+
+  <path d="M235,144 L235,170" stroke="#334155" stroke-width="2.2" fill="none" marker-end="url(#der)"/>
+  <text x="250" y="161" font-size="12.5" font-weight="600" fill="#334155">derive</text>
+
+  <!-- ============ ROM DICE ============ -->
+  <rect x="120" y="172" width="230" height="48" rx="10" fill="#fef3c7" stroke="#d97706" stroke-width="2" stroke-dasharray="6 3"/>
+  <text x="235" y="195" font-size="15" font-weight="700" fill="#b45309" text-anchor="middle">ROM DICE engine</text>
+  <text x="235" y="212" font-size="11.5" fill="#d97706" text-anchor="middle">Derives the first CDI from UDS (cold reset)</text>
+
+  <path d="M235,220 L235,246" stroke="#334155" stroke-width="2.2" fill="none" marker-end="url(#der)"/>
+  <text x="250" y="237" font-size="12.5" font-weight="600" fill="#334155">derive</text>
+
+  <!-- ============ IDevID ============ -->
+  <rect x="85" y="248" width="300" height="68" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2.2"/>
+  <text x="235" y="277" font-size="17" font-weight="700" fill="#1d4ed8" text-anchor="middle">IDevID</text>
+  <text x="235" y="299" font-size="12.5" fill="#3b82f6" text-anchor="middle">Key + Cert</text>
+  <line x1="385" y1="282" x2="425" y2="282" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="435" y="277" font-size="12.5" fill="#334155">Cert signed by: <tspan font-weight="700" fill="#1d4ed8">Vendor (Provisioner) CA</tspan></text>
+  <text x="435" y="296" font-size="12.5" fill="#64748b">Generated once at manufacturing · derived from UDS</text>
+
+  <path d="M235,316 L235,348" stroke="#334155" stroke-width="2.2" fill="none" marker-end="url(#der)"/>
+  <text x="250" y="337" font-size="12.5" font-weight="600" fill="#334155">derive + Field Entropy</text>
+
+  <!-- ============ LDevID ============ -->
+  <rect x="85" y="350" width="300" height="68" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2.2"/>
+  <text x="235" y="379" font-size="17" font-weight="700" fill="#1d4ed8" text-anchor="middle">LDevID</text>
+  <text x="235" y="401" font-size="12.5" fill="#3b82f6" text-anchor="middle">Key + Cert</text>
+  <line x1="385" y1="384" x2="425" y2="384" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="435" y="379" font-size="12.5" fill="#334155">Cert signed by: <tspan font-weight="700" fill="#1d4ed8">IDevID</tspan></text>
+  <text x="435" y="398" font-size="12.5" fill="#64748b">Incorporates Field Entropy · field onboarding</text>
+
+  <path d="M235,418 L235,450" stroke="#334155" stroke-width="2.2" fill="none" marker-end="url(#der)"/>
+  <text x="250" y="439" font-size="12.5" font-weight="600" fill="#334155">derive + FMC measurement</text>
+
+  <!-- ============ FMC Alias ============ -->
+  <rect x="85" y="452" width="300" height="68" rx="10" fill="#f0fdfa" stroke="#0d9488" stroke-width="2.2"/>
+  <text x="235" y="481" font-size="17" font-weight="700" fill="#0f766e" text-anchor="middle">FMC Alias</text>
+  <text x="235" y="503" font-size="12.5" fill="#14b8a6" text-anchor="middle">Key + Cert</text>
+  <line x1="385" y1="486" x2="425" y2="486" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="435" y="481" font-size="12.5" fill="#334155">Cert signed by: <tspan font-weight="700" fill="#0f766e">LDevID</tspan></text>
+  <text x="435" y="500" font-size="12.5" fill="#64748b">Derived every boot · incorporates the FMC digest</text>
+
+  <path d="M235,520 L235,552" stroke="#334155" stroke-width="2.2" fill="none" marker-end="url(#der)"/>
+  <text x="250" y="541" font-size="12.5" font-weight="600" fill="#334155">derive + RT measurement</text>
+
+  <!-- ============ RT Alias ============ -->
+  <rect x="85" y="554" width="300" height="68" rx="10" fill="#f0fdfa" stroke="#0d9488" stroke-width="2.2"/>
+  <text x="235" y="583" font-size="17" font-weight="700" fill="#0f766e" text-anchor="middle">RT Alias</text>
+  <text x="235" y="605" font-size="12.5" fill="#14b8a6" text-anchor="middle">Key + Cert</text>
+  <line x1="385" y1="588" x2="425" y2="588" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="435" y="583" font-size="12.5" fill="#334155">Cert signed by: <tspan font-weight="700" fill="#0f766e">FMC Alias</tspan></text>
+  <text x="435" y="602" font-size="12.5" fill="#64748b">Incorporates the runtime FW digest · runtime layer</text>
+
+  <!-- Left grouping labels -->
+  <text x="62" y="200" font-size="12.5" font-weight="700" fill="#475569" text-anchor="middle" transform="rotate(-90 62 200)">Hardware root</text>
+  <text x="62" y="490" font-size="12.5" font-weight="700" fill="#2563eb" text-anchor="middle" transform="rotate(-90 62 490)">DICE certificate hierarchy</text>
+
+  <!-- Footer -->
+  <line x1="44" y1="654" x2="916" y2="654" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="44" y="678" font-size="12.5" fill="#475569">※ Derivation: each key/CDI is generated by combining (the previous layer's CDI) + (the current layer's measurement) via a KDF/HMAC</text>
+  <text x="44" y="700" font-size="12.5" fill="#475569">※ FMC and RT Alias are re-derived on every cold reset — if the firmware changes, the measurement changes, so the key/cert change too</text>
+</svg>

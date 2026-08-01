@@ -1,0 +1,299 @@
+---
+layout: post
+title: "Understanding DICE"
+subtitle: "UDS, the Chain of Trust, DPE, and Caliptra"
+date: 2026-06-28 10:27:18 +0900
+background: '/img/bg-post.jpg'
+---
+
+<p><em>Translated and adapted from the Korean original, <a href="https://r-note.tistory.com/167" target="_blank" rel="noopener">"DICE에 대해 알아보자 (UDS에서 Chain of Trust, DPE, Caliptra)"</a> by Ishmael (r-note.tistory.com).</em></p>
+
+<h2 id="toc">Table of Contents</h2>
+<ol>
+  <li><a href="#1-what-is-dice">What Is DICE</a></li>
+  <li><a href="#2-what-dice-does">What DICE Does</a></li>
+  <li><a href="#3-core-concepts-uds-and-cdi">Core Concepts: UDS and CDI</a></li>
+  <li><a href="#4-dices-four-step-operation">DICE's Four-Step Operation</a></li>
+  <li><a href="#5-extension-repeating-the-cycle">Extension: Repeating the Four-Step Cycle</a></li>
+  <li><a href="#6-certificate-chain">Certificate Chain</a></li>
+  <li><a href="#7-open-dice">Open DICE: The Reference Implementation</a></li>
+  <li><a href="#8-dice-protection-environment">DICE Protection Environment</a></li>
+  <li><a href="#9-real-world-implementations">Real-World Implementations</a></li>
+  <li><a href="#10-wrap-up">Wrap-up</a></li>
+</ol>
+
+<h2 class="section-heading" id="1-what-is-dice">1. What Is DICE</h2>
+
+<p>DICE traces back to a concept Microsoft Research proposed in 2016. TCG (Trusted Computing Group) later standardized it and published the official spec.</p>
+<p>TCG is the same standards body best known for the TPM (Trusted Platform Module). Where TPM defines external security chips for desktops and servers, DICE aims at a lightweight trust foundation for resource-constrained embedded/IoT devices — the idea that you can achieve a similar level of assurance using just a combination of software and hardware, without a separate chip like a TPM.</p>
+<p>DICE stands for <strong>Device Identifier Composition Engine</strong>. Breaking down each word:</p>
+<ul>
+  <li><strong>Device:</strong> creates an identity bound to one specific device.</li>
+  <li><strong>Identifier:</strong> that identity takes the form of a cryptographic key.</li>
+  <li><strong>Composition:</strong> the identity is created by composing a hardware secret (UDS) with software measurements.</li>
+  <li><strong>Engine:</strong> not a physical chip, but a procedure. It defines the rule for how to derive a key this way — whenever a ROM or secure core carries out that procedure, it's acting as DICE.</li>
+</ul>
+<p>Put simply, DICE is the process of building a chain of trust (keys + certificates) while booting; separate runtime protocols like SPDM/DPE are what actually use that chain to perform attestation.</p>
+
+<h2 class="section-heading" id="2-what-dice-does">2. What DICE Does</h2>
+
+<p>It's worth being precise about the scope of what DICE actually does. In one line:</p>
+<blockquote class="blockquote">DICE = the process of building a chain of trust (keys + certificates) while booting.</blockquote>
+
+<h3>Boot Time: Building the Key Hierarchy and Certificate Chain</h3>
+<p>DICE's job is this: as each layer along the boot chain measures the next layer, it computes a CDI from that measurement, and derives a key pair and certificate from the CDI. <strong>Once boot finishes, DICE's job is done.</strong> The output is the RT Alias Key and its certificate chain.</p>
+<pre><code>ROM → compute CDI → generate IDevID, LDevID, FMC Alias Cert
+FMC → compute CDI → generate RT Alias Cert
+Boot complete → DICE finished
+</code></pre>
+
+<h3>Runtime: the Protocols That Use DICE's Output</h3>
+<p>These are the things that actually run after boot, using the material DICE produced.</p>
+<ul>
+  <li><strong>SPDM Attestation:</strong> signs challenges with the RT Alias Key and presents the certificate chain. Remotely proves "this device is running this firmware."</li>
+  <li><strong>DPE service:</strong> at runtime, SoC components can append additional measurements to the DICE chain. This is the concept of extending DICE past boot time.</li>
+</ul>
+<p>In other words, SPDM and DICE operate at different layers. DICE is "how the certificates get made"; SPDM is "how those certificates get exchanged and verified."</p>
+
+<h2 class="section-heading" id="3-core-concepts-uds-and-cdi">3. Core Concepts: UDS and CDI</h2>
+
+<p>DICE revolves around two core concepts: UDS and CDI.</p>
+
+<h3>UDS (Unique Device Secret)</h3>
+<p>UDS is a <strong>secret value unique to each device</strong>.</p>
+<ul>
+  <li>Stored in non-volatile hardware like eFuse or OTP (One-Time Programmable) storage.</li>
+</ul>
+<p>It's generated either externally or internally:</p>
+<ul>
+  <li><strong>eFuse/OTP injection:</strong> on the manufacturing line, an HSM generates a random 128–256-bit value per device and burns it into eFuse. This is how Caliptra's UDS works.</li>
+  <li><strong>SRAM PUF:</strong> instead of injecting a separate value, it uses the manufacturing-process variation in SRAM cells (the 0/1 initial-value pattern at power-on) as a device fingerprint. Mostly used in small MCUs without eFuse.</li>
+  <li><strong>TRNG-generated internally:</strong> at first boot, a value is generated with a TRNG and stored in NV storage. Since nothing is injected externally, this reduces exposure to supply-chain attacks.</li>
+</ul>
+<p>UDS matters because it's <strong>the seed for the entire chain of trust</strong>. Without ever being exposed externally, it becomes the source that derives the keys for every layer. Access to the UDS is blocked once the DICE process completes — specifically, right after the ROM computes the first CDI.</p>
+
+<h4>Comparing UDS in the ARM Ecosystem and in Caliptra</h4>
+<p>The ARM ecosystem calls the same concept the <strong>HUK (Hardware Unique Key)</strong>. The concept is identical, just named differently — the difference is that HUK is used for more than DICE CDI computation (e.g., PSA platform key derivation too), and in ARM CCA environments it's paired with a GUK (Group Unique Key).</p>
+<div class="table-responsive">
+  <table class="table table-bordered table-striped">
+    <thead><tr><th></th><th>UDS</th><th>HUK</th></tr></thead>
+    <tbody>
+      <tr><td>Source</td><td>TCG DICE spec</td><td>ARM PSA/TrustZone ecosystem</td></tr>
+      <tr><td>Purpose</td><td>Dedicated to DICE CDI derivation</td><td>Multi-purpose: CDI plus PSA platform keys, etc.</td></tr>
+      <tr><td>Paired concept</td><td>None</td><td>GUK (in CCA environments)</td></tr>
+      <tr><td>Access cutoff</td><td>Immediately after computing the CDI</td><td>Immediately after ROM/OTP code completes</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>CDI (Compound Device Identifier)</h3>
+<p>The CDI is the result of composing the UDS and a software measurement with a KDF (Key Derivation Function). It's computed like this — I'll cover exactly which algorithm and additional details in section 9, Real-World Implementations.</p>
+<pre><code>CDI_Attestation = KDF(UDS, Hash(code) ‖ Hash(config) ‖ other inputs)
+CDI_Sealing     = KDF(UDS, Hash(code) ‖ Hash(config) ‖ version info)
+</code></pre>
+<p>CDI splits into two kinds depending on purpose:</p>
+<ul>
+  <li><strong>Attestation CDI:</strong> used to derive the key pair used for remote attestation. The basis for the claim "I am this specific device, running this specific software."</li>
+  <li><strong>Sealing CDI:</strong> used to derive an encryption key for sealing data. Used to create data that can only be unsealed by a specific software version. If the firmware changes, the seal can't be undone — a natural rollback defense.</li>
+</ul>
+<p>If the software changes, the CDI changes with it. That the key reflects software state is DICE's single most powerful property.</p>
+
+<h2 class="section-heading" id="4-dices-four-step-operation">4. DICE's Four-Step Operation</h2>
+
+<p>Here's a step-by-step look at what happens when DICE runs.</p>
+
+<h3>Step 1. Measure</h3>
+<p>The DICE subject (usually the ROM, or a previous layer) hashes the next layer's code and configuration.</p>
+<ul>
+  <li>Code hash: e.g., a SHA-384 of the firmware image that will run next</li>
+  <li>Config hash: debug-lock state, secure boot mode, specific config bits, etc.</li>
+</ul>
+<p>Since this measurement feeds into the CDI computation, what gets measured determines what the CDI means. This config value can vary by platform, and platforms often combine several config values together.</p>
+
+<h3>Step 2. Compute CDI</h3>
+<p>A new CDI is created using a KDF.</p>
+<pre><code>CDI_new = HMAC-KDF(key=UDS or CDI_prev, data=measurement)
+</code></pre>
+<p>The first layer uses the UDS as input; every subsequent layer uses the previous CDI as input. The UDS itself is used exactly once.</p>
+
+<h3>Step 3. Lock UDS</h3>
+<p>The moment CDI computation finishes, access to the UDS is blocked at the hardware level — implemented via register locks, memory protection settings, and the like. From this point on, no code can access the UDS value.</p>
+<p>This lock is the core of DICE's security model. Even if a later layer is compromised, the UDS itself stays safe.</p>
+
+<h3>Step 4. Transfer Control</h3>
+<p>The newly computed CDI is handed to the next layer, along with control. That next layer uses the CDI to derive its own keys, then repeats the same process for the layer after it.</p>
+
+<h2 class="section-heading" id="5-extension-repeating-the-cycle">5. Extension: Repeating the Four-Step Cycle</h2>
+
+<p>Above, we walked through a single DICE cycle in detail. In an actual booting sequence, DICE repeats at every boot stage. For example, the structure looks like this:</p>
+<pre><code>┌─────────────────────────────────────────────┐
+│  HW  │  UDS (eFuse, never exposed externally)│
+└──────┴───────────────────────────────────────┘
+           │  KDF(UDS, Hash(ROM))
+           ▼
+┌─────────────────────────────────────────────┐
+│  ROM │  CDI_0  (Attestation / Sealing)       │
+└──────┴───────────────────────────────────────┘
+           │  KDF(CDI_0, Hash(BL1))
+           ▼
+┌─────────────────────────────────────────────┐
+│  BL1 │  CDI_1                                │
+└──────┴───────────────────────────────────────┘
+           │  KDF(CDI_1, Hash(BL2))
+           ▼
+          ...
+</code></pre>
+<p><strong>NOTE:</strong> in this diagram, a step is added where a hardware DICE computes the ROM's own hash before the ROM stage runs — but on most platforms, including Caliptra, the ROM is assumed to be the Root of Trust and the first trust anchor, so that step (hashing the ROM itself) is skipped.</p>
+<p>There are two important properties visible in this structure.</p>
+<p>1) <strong>Software measurements are reflected in the keys.</strong> If the BL1 code changes, CDI_1 changes, and every CDI downstream of it changes too. Booting with tampered firmware can never reproduce the keys of a legitimate boot.</p>
+<p>2) <strong>Each layer can only access its own CDI.</strong> BL2 receives CDI_2, but it can't work backward from that to recover CDI_0 or the UDS. That's guaranteed by the one-way nature of the KDF.</p>
+
+<h2 class="section-heading" id="6-certificate-chain">6. Certificate Chain</h2>
+
+<p>Once a key pair is derived from a CDI, that key needs a certificate chain to actually be trusted. The DICE Attestation Architecture defines that certificate chain as follows.</p>
+
+<h3>IDevID (Initial Device Identity)</h3>
+<ul>
+  <li><strong>Derivation source:</strong> KDF(UDS)</li>
+  <li><strong>Certificate signer:</strong> the Vendor CA (issued at manufacturing)</li>
+  <li><strong>Used for:</strong> signing the LDevID certificate. IDevID and LDevID are sibling keys, each independently derived from the UDS; IDevID signs LDevID's certificate to chain them together as the same device.</li>
+  <li><strong>Renewable:</strong> no (fixed to the UDS)</li>
+</ul>
+
+<h3>LDevID (Local Device Identity)</h3>
+<ul>
+  <li><strong>Derivation source:</strong> KDF(UDS, FE). FE (field entropy) is injected at field deployment.</li>
+  <li><strong>Certificate signer:</strong> IDevID</li>
+  <li><strong>Used for:</strong> signing the FMC Alias certificate</li>
+  <li><strong>Renewable:</strong> yes (regenerated by rotating the FE)</li>
+</ul>
+
+<h3>FMC Alias Key</h3>
+<ul>
+  <li><strong>Derivation source:</strong> KDF(CDI_FMC). Derived from the CDI produced when the ROM measures FMC.</li>
+  <li><strong>Certificate signer:</strong> LDevID</li>
+  <li><strong>Used for:</strong> signing the RT Alias certificate</li>
+  <li><strong>Renewable:</strong> automatically, every boot</li>
+</ul>
+
+<h3>RT Alias Key</h3>
+<ul>
+  <li><strong>Derivation source:</strong> KDF(CDI_RT). Derived from the CDI produced when FMC measures the Runtime.</li>
+  <li><strong>Certificate signer:</strong> FMC Alias</li>
+  <li><strong>Used for:</strong> signing challenges in remote attestation over protocols like SPDM. If the firmware changes, the CDI changes, so the key changes automatically too.</li>
+  <li><strong>Renewable:</strong> automatically, every boot</li>
+</ul>
+
+<p>Here's what the certificate signing chain looks like visualized:</p>
+<figure class="text-center">
+  <img class="img-fluid" src="{{ '/img/posts/dice-caliptra-cert-chain.svg' | relative_url }}" alt="Caliptra DICE certificate chain, from the Vendor Provisioner CA down through IDevID, LDevID, FMC Alias, RT Alias, to the DPE leaf">
+</figure>
+
+<p>If attestation is the act of presenting a certificate, then because the firmware measurement is already baked into that certificate, this structure lets you know what software a device is running without a separate Measurement Report.</p>
+
+<h2 class="section-heading" id="7-open-dice">7. Open DICE: The Reference Implementation</h2>
+
+<p>Where the TCG spec defines the conceptual model, Google's <strong>Open DICE</strong> is a reference implementation that makes that spec concrete enough to actually build.</p>
+
+<h3>Open Profile's Key Contribution</h3>
+<p>The TCG spec alone doesn't specify the inputs that go into a CDI computation in enough detail. Open DICE standardizes the inputs for each layer.</p>
+<div class="table-responsive">
+  <table class="table table-bordered table-striped">
+    <thead><tr><th>Input</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Code Hash</td><td>Hash of the next layer's code image</td></tr>
+      <tr><td>Authority Hash</td><td>Hash of the public key that signed the code</td></tr>
+      <tr><td>Config Descriptor</td><td>Structured config values: debug state, device settings, etc.</td></tr>
+      <tr><td>Mode</td><td>Normal / Debug / Recovery / Not Configured</td></tr>
+      <tr><td>Hidden</td><td>An additional secret the consumer can inject</td></tr>
+    </tbody>
+  </table>
+</div>
+<p>By defining these inputs consistently, implementations from different vendors can compute and verify CDIs the same way.</p>
+
+<h3>Certificate Format: X.509 vs. CWT</h3>
+<p>Open DICE supports two certificate formats:</p>
+<ul>
+  <li><strong>X.509:</strong> fully compatible with existing PKI infrastructure, reusing the verification tooling of the browser/TLS ecosystem. It's larger, which suits higher-performance environments.</li>
+  <li><strong>CBOR Web Token (CWT, RFC 8392):</strong> a lightweight, CBOR-encoded token that packs the same information into a much smaller footprint for IoT/embedded environments outside TLS. This is what Open DICE's CBOR profile covers.</li>
+</ul>
+<p>You can mix both formats within a single chain — upper layers as X.509, lower embedded layers as CWT.</p>
+
+<h2 class="section-heading" id="8-dice-protection-environment">8. DICE Protection Environment</h2>
+
+<p>The <strong>DPE (DICE Protection Environment)</strong> spec, published in 2023, takes DICE a step further into a service model.</p>
+
+<h3>The Problem</h3>
+<p>In the base DICE model, DICE operations (CDI computation, key derivation) run directly inside each layer's code along the boot chain. That means that layer has direct access to the CDI and derived keys.</p>
+<p>Ideally, the CDI and secret keys should never leave an isolated environment. DPE proposes separating DICE operations into an independent service to structurally guarantee that isolation.</p>
+
+<h3>DPE's Role</h3>
+<p>DPE's main roles are the following two:</p>
+<ul>
+  <li><strong>CDI isolation:</strong> confines the CDI inside a Secure Partition (e.g., TF-M), so outside code can never access it directly; clients can only reach DPE through an opaque context handle. The CDI is never exposed outside the secure partition.</li>
+  <li><strong>Runtime extension:</strong> even after boot finishes, when a new component comes online, it can extend the DICE chain further using a <code>DeriveContext</code> command. This extends DICE — which used to operate only at boot time — into runtime.</li>
+</ul>
+
+<h3>How It Works</h3>
+<p>Let's use ARM TF-M's DPE as an example. Caliptra itself is a secure partition, but since the most intuitive way a DPE client extends the chain is through sequential <code>DeriveContext</code> calls at each boot stage, I'm using a platform where the host's booting sequence acts as the client, as the example.</p>
+<figure class="text-center">
+  <img class="img-fluid" src="{{ '/img/posts/dice-dpe-sequence.svg' | relative_url }}" alt="DPE call sequence diagram showing DeriveContext and CertifyKey exchanged between a client and an isolated DPE service">
+</figure>
+<p>The client never sees the CDI or the raw secret key. It only receives an opaque context handle, and sends commands to DPE using that handle.</p>
+<p>Here are the main commands used in DPE:</p>
+<div class="table-responsive">
+  <table class="table table-bordered table-striped">
+    <thead><tr><th>Command</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td>DeriveContext</td><td>Takes a measurement, internally derives a new CDI, returns a handle</td></tr>
+      <tr><td>CertifyKey</td><td>Issues a certificate for a specific public key (CDI-based signature)</td></tr>
+      <tr><td>GetCertificateChain</td><td>Returns the certificate chain accumulated so far</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>TF-M Implementation</h3>
+<p>ARM's Trusted Firmware-M (TF-M) implements DPE as a Secure Partition. The Non-Secure World or other partitions access DPE through the PSA IPC message interface. Internally, it parses CBOR-encoded commands with the QCBOR library, and generates CWT certificates with t_cose.</p>
+
+<h2 class="section-heading" id="9-real-world-implementations">9. Real-World Implementations</h2>
+
+<h3>Caliptra</h3>
+<p><a href="{{ '/2026/06/15/caliptra-open-source-silicon-root-of-trust.html' | relative_url }}">Caliptra, covered in an earlier post</a>, adopts DICE as its core architecture.</p>
+<p>Caliptra's DICE chain looks like this:</p>
+<figure class="text-center">
+  <img class="img-fluid" src="{{ '/img/posts/dice-caliptra-derivation-chain.svg' | relative_url }}" alt="Caliptra DICE derivation chain rooted in the UDS, through the ROM DICE engine, IDevID, LDevID, FMC Alias, and RT Alias">
+</figure>
+<p>Two things stand out. First, starting with Caliptra 2.0, it supports ECDSA-384 and PQC MLDSA-87 simultaneously — both algorithms run in parallel through the certificate chain. Second, runtime attestation is provided through the DPE service: other components inside the SoC add their own measurements to the chain and get certificates issued via Caliptra's DPE handle.</p>
+
+<h3>ARM RSE</h3>
+<p>ARM's RSE (Runtime Security Engine) also runs a DPE partition on top of TF-M. DICE is applied across the entire boot chain: BL1 ROM → BL2 → the Secure world → the Non-Secure world.</p>
+<p>Where Caliptra exists as an independent security core inside the SoC, RSE also doubles as the ARM SoC's system control processor — that's the difference. But the DICE principle and chain structure are identical.</p>
+
+<h3>Relationship with SPDM</h3>
+<p>The attestation protocol covered in an earlier SPDM post and DICE handle different layers.</p>
+<ul>
+  <li><strong>DICE:</strong> a specification for how to create certificates (key derivation, certificate issuance)</li>
+  <li><strong>SPDM:</strong> a specification for how to exchange and verify the certificates that were created (a protocol)</li>
+</ul>
+<p>The certificates and measurements that SPDM's <code>GET_MEASUREMENTS</code> and <code>CHALLENGE</code> commands need come from DICE. The two standards are separate, but on a real device they work together.</p>
+
+<h2 class="section-heading" id="10-wrap-up">10. Wrap-up</h2>
+
+<p>If I had to sum up DICE in one sentence: it's a structure that <strong>bakes software measurements into keys</strong>.</p>
+<p>Where a TPM bolts on a separate trusted chip, DICE turns the boot flow itself into a chain of trust. Without any separate security chip, it's designed so that the moment software state changes, the keys change with it.</p>
+<p>Multiple platforms — Caliptra, RSE, Android's pVM, and others — have already adopted DICE. Across datacenters, mobile, and IoT alike, hardware RoT plus software-measurement-based key derivation is becoming an industry standard, and given that DICE sits at the center of that trend, I think understanding this concept matters.</p>
+<p>In a follow-up post, I'll dig into caliptra-sw's implementation in detail — what inputs, what KDF, and exactly how the keys get derived and used.</p>
+
+<hr>
+
+<h2 id="references">References</h2>
+<ul>
+  <li><a href="https://trustedcomputinggroup.org/wp-content/uploads/Hardware-Requirements-for-Device-Identifier-Composition-Engine-r78_For-Publication.pdf" target="_blank" rel="noopener">TCG Hardware Requirements for DICE (r78)</a></li>
+  <li><a href="https://trustedcomputinggroup.org/wp-content/uploads/DICE-Attestation-Architecture-r23-final.pdf" target="_blank" rel="noopener">TCG DICE Attestation Architecture</a></li>
+  <li><a href="https://trustedcomputinggroup.org/wp-content/uploads/DICE-Protection-Environment-Version-1.0_pub.pdf" target="_blank" rel="noopener">TCG DICE Protection Environment v1.0</a></li>
+  <li><a href="https://github.com/google/open-dice" target="_blank" rel="noopener">google/open-dice (GitHub)</a></li>
+  <li><a href="https://github.com/google/open-dice/blob/main/docs/specification.md" target="_blank" rel="noopener">Open Profile for DICE Specification</a></li>
+  <li><a href="https://deepwiki.com/chipsalliance/caliptra-sw/2.2-dice-security-architecture" target="_blank" rel="noopener">DICE Security Architecture — Caliptra</a></li>
+  <li><a href="https://trustedfirmware-m.readthedocs.io/projects/tf-m-extras/en/latest/partitions/dice_protection_environment/dice_protection_environment.html" target="_blank" rel="noopener">TF-M DPE Partition</a></li>
+  <li><a href="https://www.microsoft.com/en-us/research/project/dice-device-identifier-composition-engine/" target="_blank" rel="noopener">Microsoft Research DICE Project</a></li>
+</ul>
