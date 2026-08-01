@@ -17,6 +17,9 @@ linkedin_username:
 # blank to disable.
 goatcounter_code:  suylee
 
+# Google Search Console — HTML tag verification.
+google_site_verification: 9sYUsc8RDmT-5DWPuG9N6Vng7fh2kC41L4BAtcdzL9I
+
 # Build settings
 markdown:           kramdown
 paginate:           5
