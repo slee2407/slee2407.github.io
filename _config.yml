@@ -15,7 +15,7 @@ linkedin_username:
 # GoatCounter analytics — sign up at https://www.goatcounter.com/ and put your
 # site code here (the "mycode" part of https://mycode.goatcounter.com). Leave
 # blank to disable.
-goatcounter_code:
+goatcounter_code:  suylee
 
 # Build settings
 markdown:           kramdown
