@@ -1,0 +1,27 @@
+title:              Suy Lee
+email:              suy.suy.lee@gmail.com
+description:        Suy Lee's blog
+author:             Suy Lee
+baseurl:            ""
+url:                "https://suy-lee.github.io"
+
+# Social Profiles
+twitter_username:
+github_username:    suy-lee
+facebook_username:
+instagram_username:
+linkedin_username:
+
+# GoatCounter analytics — sign up at https://www.goatcounter.com/ and put your
+# site code here (the "mycode" part of https://mycode.goatcounter.com). Leave
+# blank to disable.
+goatcounter_code:
+
+# Build settings
+markdown:           kramdown
+paginate:           5
+paginate_path:      "/posts/page:num/"
+plugins:
+  - jekyll-feed
+  - jekyll-paginate
+  - jekyll-sitemap ## Uncomment this line to silently generate a sitemaps.org compliant sitemap for your Jekyll site
