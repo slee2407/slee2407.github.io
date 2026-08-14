@@ -1,0 +1,65 @@
+---
+layout: post
+title: "Caliptra 2.0 Key Derivation and Certificate Generation"
+subtitle: "Reading the DICE cert/key generation diagram: PUF, IDevID, and the ECC/ML-DSA dual chain"
+date: 2026-08-15 01:06:00 +0900
+background: '/img/bg-post.jpg'
+tags: [Caliptra, DICE, Silicon Root of Trust, Secure Boot, PQC, ML-DSA, Hardware Security, Attestation, PUF, Post-Quantum Cryptography]
+---
+
+<p><em>Translated and adapted from the Korean original, <a href="https://r-note.tistory.com/171" target="_blank" rel="noopener">"Caliptra 2.0 키 파생 및 인증서 생성 과정"</a> by Ishmael (r-note.tistory.com).</em></p>
+
+<p>While studying Caliptra recently, I figured it would help to have a single picture showing the whole key derivation and certificate generation flow at a glance — so I drew one.</p>
+
+<p>The diagram isn't original to me: it already ships in the Caliptra spec published by CHIPS Alliance, and it has been presented at OCP conferences as well. What I did was redraw it in a notation I find easier to read. (The original is Fig 4. DICE Cert/Key Generation, in the Identity section of <a href="https://github.com/chipsalliance/Caliptra/blob/main/doc/Caliptra.md" target="_blank" rel="noopener">chipsalliance/Caliptra — doc/Caliptra.md</a>.)</p>
+
+<figure class="text-center">
+  <a href="{{ '/img/posts/caliptra-dice-key-cert-generation.png' | relative_url }}" target="_blank" rel="noopener">
+    <img class="img-fluid" src="{{ '/img/posts/caliptra-dice-key-cert-generation.png' | relative_url }}" alt="Caliptra 2.0 DICE key and certificate generation flow, from fuses holding the obfuscated UDS seed and field entropy, through HKDF/HMAC derivation of CDI values in ROM, FMC, and RT, to the parallel ECC-384 and ML-DSA-87 certificate chains exported to Caliptra RT">
+  </a>
+  <figcaption class="caption text-muted mt-2">
+    Caliptra 2.0 DICE cert/key generation, redrawn from Fig 4 of the Caliptra spec. Click the image to open it full size.
+  </figcaption>
+</figure>
+
+<p>Here's what I picked up while drawing it.</p>
+
+<h2 class="section-heading" id="1-rtl-obfuscation-key-or-puf">1. RTL Obfuscation Key or PUF</h2>
+
+<p>PUF here means <strong>Physically Unclonable Function</strong>.</p>
+<ul>
+  <li>What the fuses hold is the UDS Seed and the Field Entropy <strong>encrypted with AES-256</strong>, not the raw values.</li>
+  <li>The "RTL Obfuscation Key or PUF" box decides <strong>how the key for that decryption is supplied</strong>.</li>
+  <li><strong>RTL Obfuscation Key:</strong> the key value is baked into the RTL as a constant. (??)</li>
+  <li><strong>PUF:</strong> a circuit that reads the chip's physical manufacturing variation to produce a value unique to that die, measured off the silicon whenever it's needed. Unsurprisingly this is the more secure option, but the practical burden it carries means the RTL route is what actually gets used a lot of the time.</li>
+</ul>
+
+<h2 class="section-heading" id="2-idevid-key-vs-cert">2. The IDevID private key is generated on every boot; the IDevID cert is generated exactly once, in manufacturing mode</h2>
+
+<ul>
+  <li>The IDevID <strong>private key is derived on every boot</strong>. It gets regenerated each time.</li>
+  <li>The <strong>certificate</strong>, on the other hand, is only produced in manufacturing mode. It's exported, signed by the CA, and the signed result is stored in the SoC's non-volatile memory. From then on, the IDevID cert is included in what gets returned for an SPDM <code>GET_CERTIFICATE</code>.</li>
+</ul>
+<blockquote class="blockquote">"From LDevID down, the parent private key lives inside the key vault, so you can just re-sign on every boot. But IDevID's parent is a CA sitting in a company safe. You can't exactly phone the manufacturer for a signature every time you power on." (by Claude)</blockquote>
+
+<h2 class="section-heading" id="3-hybrid-attestation-for-pqc">3. Caliptra went hybrid to meet PQC head-on while keeping ECC's track record</h2>
+
+<ul>
+  <li>At <em>Export to Caliptra RT</em>, the certificate chain is derived in two flavors: <strong>ECC and ML-DSA</strong> (a dual-chain structure).</li>
+  <li>When the host invokes the mailbox, it picks which certificate to use by choosing between these commands:
+    <ul>
+      <li><code>INVOKE_DPE_ECC384</code> ("DPEC")</li>
+      <li><code>INVOKE_DPE_MLDSA87</code> ("DPEM")</li>
+    </ul>
+  </li>
+</ul>
+
+<hr>
+
+<p>Questions about anything unclear, or corrections where I've got something wrong, are always welcome — drop me a note on the <a href="{{ '/contact.html' | relative_url }}">contact page</a>.</p>
+
+<h2 id="references">References</h2>
+<ul>
+  <li><a href="https://github.com/chipsalliance/Caliptra/blob/main/doc/Caliptra.md" target="_blank" rel="noopener">chipsalliance/Caliptra — Caliptra specification (Identity section, Fig 4. DICE Cert/Key Generation)</a></li>
+  <li><a href="https://github.com/chipsalliance/caliptra-sw" target="_blank" rel="noopener">chipsalliance/caliptra-sw (ROM, FMC, and runtime firmware)</a></li>
+</ul>

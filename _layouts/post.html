@@ -34,6 +34,15 @@ layout: default
 
         {{ content }}
 
+        {% if page.tags.size > 0 %}
+        <hr>
+        <div class="post-tags">
+          {% for tag in page.tags %}
+          <span class="badge badge-secondary">{{ tag }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
         <hr>
 
         <div class="clearfix">
