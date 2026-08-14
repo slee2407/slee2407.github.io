@@ -21,6 +21,9 @@ goatcounter_code:  suylee
 google_site_verification: 9sYUsc8RDmT-5DWPuG9N6Vng7fh2kC41L4BAtcdzL9I
 
 # Build settings
+# Posts are written with +0900 dates; without this the CI runner builds in UTC
+# and any post before 09:00 KST lands on the previous day's URL.
+timezone:           Asia/Seoul
 markdown:           kramdown
 paginate:           5
 paginate_path:      "/posts/page:num/"
